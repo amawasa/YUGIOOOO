@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>遊戯王 誘発判断シミュレーター（確率完全版）</title>
+<style>
+body { font-family: sans-serif; }
+button { margin: 4px; }
+.log { border:1px solid #666; height:260px; overflow-y:auto; padding:6px; }
+.status { font-weight:bold; margin:6px 0; }
+.zone { border:1px solid #999; padding:6px; min-height:90px; margin-bottom:8px; }
+.card { width:80px; margin:4px; }
+.small { width:40px; }
+</style>
+</head>
+<body>
+
+<h2>誘発枚数設定（40枚デッキ）</h2>
+<div id="deckConfig"></div>
+<button onclick="startGame()">スタート / リセット</button>
+
+<div class="status">
+相手の手札枚数：<span id="handCount">0</span> 枚
+</div>
+
+<h3>発動候補</h3>
+<div class="zone" id="pendingZone"></div>
+
+<h3>適応中</h3>
+<div class="zone" id="activeZone"></div>
+
+<h2>展開入力</h2>
+<div>
+<button onclick="inputAction(1)">ドロー・サーチ</button>
+<button onclick="inputAction(2)">デッキSS</button>
+<button onclick="inputAction(3)">EX SS</button>
+<button onclick="inputAction(4)">墓地関連</button>
+<button onclick="inputAction(5)">フィールド効果</button>
+<button onclick="inputAction(6)">特殊召喚効果</button>
+<button onclick="inputAction(7)">召喚</button>
+<button onclick="inputAction(8)">ドロール&ロックバード</button>
+</div>
+
+<button onclick="resolve()">解決</button>
+<button onclick="negate()">無効</button>
+
+<h3>ログ</h3>
+<div class="log" id="log"></div>
+
+<script>
+/* ===== カード定義 ===== */
+    const actionName = {
+ 1:"ドロー・サーチ",
+ 2:"デッキSS",
+ 3:"EX SS",
+ 4:"墓地関連",
+ 5:"フィールド効果",
+ 6:"特殊召喚効果",
+ 7:"召喚",
+ 8:"ドロール&ロックバード"
+};
+
+const cards = {
+ G:{name:"増殖するG",trigger:[2,3,6],maxUse:1,max:2,img:"G.png"},
+ FW:{name:"フワロス",trigger:[2,3],maxUse:2,max:3,img:"FW.jpg"},
+ DR:{name:"ドロール&ロック",trigger:[1],maxUse:1,max:2,img:"DR.png"},
+ UR:{name:"灰流うらら",trigger:[1,2],maxUse:1,max:3,img:"UR.png"},
+ NIB:{name:"ニビル",trigger:[2,3,6,7],maxUse:1,max:2,img:"NIB.png"},
+ WAVE:{name:"霊王の波動",trigger:[6],maxUse:1,max:3,img:"WAVE.jpg"},
+ IMP:{name:"無限泡影",trigger:[5],maxUse:3,max:3,img:"IMP.png"},
+ WARA:{name:"屋敷わらし",trigger:[4],maxUse:1,max:2,img:"WARA.png"}
+};
+
+/* ===== 状態 ===== */
+let deck=[], hand=[], pending=[];
+let used={}, active={G:0,FW:0};
+let summon=0;
+
+/* ===== ユーティリティ ===== */
+const log = t=>{
+ const d=document.getElementById("log");
+ d.innerHTML+=t+"<br>";
+ d.scrollTop=d.scrollHeight;
+};
+const updateHandCount = ()=> {
+ document.getElementById("handCount").textContent = hand.length;
+};
+
+/* ===== 初期設定UI ===== */
+(function setup(){
+ const d=document.getElementById("deckConfig");
+ for(const k in cards){
+  d.innerHTML+=`${cards[k].name}
+   <input type="number" id="${k}" min="0" max="${cards[k].max}" value="${cards[k].max}">
+   <br>`;
+ }
+})();
+
+/* ===== デッキ構築 ===== */
+function buildDeck(){
+ const d=[];
+ for(const k in cards){
+  const n=Number(document.getElementById(k).value);
+  for(let i=0;i<n;i++) d.push(k);
+ }
+ while(d.length<40) d.push("V"); // バニラ
+ return d;
+}
+
+function shuffle(a){
+ for(let i=a.length-1;i>0;i--){
+  const j=Math.floor(Math.random()*(i+1));
+  [a[i],a[j]]=[a[j],a[i]];
+ }
+}
+
+function draw(){
+ if(deck.length===0) return;
+ hand.push(deck.pop());
+ updateHandCount();
+}
+
+/* ===== ゲーム開始 ===== */
+function startGame(){
+ deck=buildDeck();
+ shuffle(deck);
+ hand=[];
+ pending=[];
+ active={G:0,FW:0};
+ summon=0;
+ used={};
+ for(const k in cards) used[k]=0;
+
+ document.getElementById("log").innerHTML="";
+ document.getElementById("pendingZone").innerHTML="";
+ document.getElementById("activeZone").innerHTML="";
+
+ for(let i=0;i<5;i++) draw();
+ log("ゲーム開始（初期手札5枚）");
+}
+
+/* ===== 表示 ===== */
+function showPending(){
+ const z=document.getElementById("pendingZone");
+ z.innerHTML="";
+ pending.forEach(k=>{
+  const i=document.createElement("img");
+  i.src=cards[k].img;
+  i.className="card";
+  z.appendChild(i);
+ });
+}
+
+function showActive(){
+ const z=document.getElementById("activeZone");
+ z.innerHTML="";
+ if(active.G>0){
+  const i=document.createElement("img");
+  i.src=cards.G.img;
+  i.className="card small";
+  z.appendChild(i);
+ }
+ if(active.FW>0){
+  const i=document.createElement("img");
+  i.src=cards.FW.img;
+  i.className="card small";
+  z.appendChild(i);
+ }
+}
+
+/* ===== 展開入力 ===== */
+function inputAction(n){
+log("入力："+actionName[n]);
+
+
+ if(n===8){
+  active={G:0,FW:0};
+  showActive();
+  log("ドロールによりG / フワロス無効");
+  return;
+ }
+
+ if([2,3,6,7].includes(n)) summon++;
+ applyContinuous(n);
+ checkTrigger(n);
+}
+
+/* ===== 誘発判定 ===== */
+function checkTrigger(n){
+ pending=[];
+ for(const k in cards){
+  if(!cards[k].trigger.includes(n)) continue;
+  if(used[k]>=cards[k].maxUse) continue;
+  if(!hand.includes(k)) continue;
+  if(k==="NIB" && summon<=5) continue;
+
+  // ★追加：ドロールはGまたはフワロス適応中なら発動しない
+  // ドロールはGまたはフワロスが
+  // ・適応中 または ・手札にある場合 発動しない
+  if(
+    k === "DR" &&
+    (
+      active.G > 0 ||
+      active.FW > 0 ||
+      hand.includes("G") ||
+      hand.includes("FW")
+    )
+  ) continue;
+
+  used[k]++;
+  hand.splice(hand.indexOf(k),1); // 消費
+  pending.push(k);
+ }
+ updateHandCount();
+ showPending();
+ if(pending.length)
+  log("発動候補："+pending.map(k=>cards[k].name).join(" / "));
+}
+
+/* ===== 解決・無効 ===== */
+function resolve(){
+ pending.forEach(k=>{
+  log(cards[k].name+" 解決");
+  if(k==="G") active.G++;
+  if(k==="FW") active.FW++;
+  if(k==="DR") active={G:0,FW:0};
+ });
+ pending=[];
+ showPending();
+ showActive();
+}
+
+function negate(){
+ pending.forEach(k=>log(cards[k].name+" 無効"));
+ pending=[];
+ showPending();
+}
+
+/* ===== 継続効果 ===== */
+function applyContinuous(n){
+ if(active.G>0 && [2,3,6].includes(n)){
+  draw();
+  log("増殖するG ドロー");
+ }
+ if(active.FW>0 && [2,3].includes(n)){
+  for(let i=0;i<active.FW;i++) draw();
+  log(`フワロス ドロー×${active.FW}`);
+ }
+}
+</script>
+
+</body>
+</html>
