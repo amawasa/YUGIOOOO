@@ -126,7 +126,7 @@ function startGame(){
  shuffle(deck);
  hand=[];
  pending=[];
- active={G:0,FW:0};
+ active={G:0,FW:0,DR:0};
  summon=0;
  used={};
  for(const k in cards) used[k]=0;
@@ -150,19 +150,27 @@ function showPending(){
   z.appendChild(i);
  });
 }
-
 function showActive(){
  const z=document.getElementById("activeZone");
  z.innerHTML="";
+
  if(active.G>0){
   const i=document.createElement("img");
   i.src=cards.G.img;
   i.className="card small";
   z.appendChild(i);
  }
+
  if(active.FW>0){
   const i=document.createElement("img");
   i.src=cards.FW.img;
+  i.className="card small";
+  z.appendChild(i);
+ }
+
+ if(active.DR>0){
+  const i=document.createElement("img");
+  i.src=cards.DR.img;
   i.className="card small";
   z.appendChild(i);
  }
@@ -173,12 +181,15 @@ function inputAction(n){
 log("入力："+actionName[n]);
 
 
- if(n===8){
-  active={G:0,FW:0};
+if(n===8){
+  active.DR = 1;   // ★ 自分で使ったドロールを適応
+  active.G = 0;
+  active.FW = 0;
   showActive();
-  log("ドロールによりG / フワロス無効");
+  log("ドロール&ロックバード 適応（G / フワロス無効）");
   return;
- }
+}
+
 
  if([2,3,6,7].includes(n)) summon++;
  applyContinuous(n);
@@ -223,7 +234,11 @@ function resolve(){
   log(cards[k].name+" 解決");
   if(k==="G") active.G++;
   if(k==="FW") active.FW++;
-  if(k==="DR") active={G:0,FW:0};
+    if(k==="DR"){
+    active.DR=1;
+    active.G=0;
+    active.FW=0;
+  };
  });
  pending=[];
  showPending();
